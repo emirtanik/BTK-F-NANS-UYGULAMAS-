@@ -4,6 +4,17 @@ target/
 !**/src/main/**/target/
 !**/src/test/**/target/
 
+# Gizli bilgiler - kesinlikle git'e eklenmemeli
+.env
+.env.local
+.env.production
+application-local.properties
+application-secret.properties
+
+# H2 veritabani dosyalari - kullanici verisi icerdiginden git'e eklenmemeli
+data/*.mv.db
+data/*.trace.db
+
 ### STS ###
 .apt_generated
 .classpath

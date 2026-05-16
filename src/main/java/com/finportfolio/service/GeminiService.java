@@ -29,18 +29,21 @@ public class GeminiService {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     /**
-     * Gemini API'ye prompt gönderir, dönen metni geri verir.
-     * systemInstruction → asistan kişiliği (Türkçe finans danışmanı)
-     * userMessage → kullanıcının mesajı veya context'li soru
+     * Gemini API'ye prompt gonderir, donen metni geri verir.
+     * API anahtari URL query parameter yerine x-goog-api-key header'inda gonderilir
+     * (URL'ler proxy/access loglarinda gozukur, header'lar gozukmez).
      */
     public String generate(String systemInstruction, String userMessage) {
-        try {
-            String url = String.format("%s/models/%s:generateContent?key=%s", baseUrl, model, apiKey);
+        if (apiKey == null || apiKey.isBlank()) {
+            log.error("Gemini API key ayarlanmamis. GEMINI_API_KEY env variable'ini set edin.");
+            return "AI servisi henuz yapilandirilmamis.";
+        }
 
-            // Request body JSON oluştur
+        try {
+            String url = String.format("%s/models/%s:generateContent", baseUrl, model);
+
             ObjectNode root = objectMapper.createObjectNode();
 
-            // System instruction (asistan kişiliği)
             if (systemInstruction != null && !systemInstruction.isBlank()) {
                 ObjectNode systemNode = objectMapper.createObjectNode();
                 ArrayNode systemParts = objectMapper.createArrayNode();
@@ -51,7 +54,6 @@ public class GeminiService {
                 root.set("systemInstruction", systemNode);
             }
 
-            // User content
             ArrayNode contents = objectMapper.createArrayNode();
             ObjectNode userContent = objectMapper.createObjectNode();
             userContent.put("role", "user");
@@ -63,22 +65,20 @@ public class GeminiService {
             contents.add(userContent);
             root.set("contents", contents);
 
-            // Generation config
             ObjectNode generationConfig = objectMapper.createObjectNode();
             generationConfig.put("temperature", 0.7);
             generationConfig.put("maxOutputTokens", 800);
             root.set("generationConfig", generationConfig);
 
-            // HTTP isteği
             RestClient client = RestClient.create();
             String responseBody = client.post()
                     .uri(url)
                     .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
+                    .header("x-goog-api-key", apiKey)
                     .body(root.toString())
                     .retrieve()
                     .body(String.class);
 
-            // Dönen JSON'dan text alanını çıkar
             JsonNode response = objectMapper.readTree(responseBody);
             JsonNode candidates = response.path("candidates");
             if (candidates.isArray() && candidates.size() > 0) {
@@ -88,14 +88,13 @@ public class GeminiService {
                 }
             }
 
-            log.warn("Gemini boş yanıt döndü: {}", responseBody);
-            return "Üzgünüm, şu an cevap üretemedim. Lütfen tekrar dene.";
+            log.warn("Gemini bos yanit dondu");
+            return "Uzgunum, su an cevap uretemedim. Lutfen tekrar dene.";
 
         } catch (Exception e) {
-            log.error("Gemini API hatası", e);
-            return "Şu an asistana ulaşamıyorum. Lütfen birazdan tekrar dene.";
+            // Stack trace'i logla ama API key sizdirma riskine karsi mesaji generic tut
+            log.error("Gemini API hatasi: {}", e.getClass().getSimpleName());
+            return "Su an asistana ulasamiyorum. Lutfen birazdan tekrar dene.";
         }
     }
-    private String buildFallbackResponse(String userMessage) {
-}
 }
