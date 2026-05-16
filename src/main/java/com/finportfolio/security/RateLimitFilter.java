@@ -7,6 +7,7 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
@@ -20,18 +21,24 @@ import java.util.concurrent.atomic.AtomicInteger;
 /**
  * IP bazli rate limit filter.
  *
- * Login endpoint'ine dakikada 5 istek limiti uygular.
- * Brute force saldirilarini engeller.
+ * - /api/auth/login: dakikada 5 istek
+ * - /api/auth/register: dakikada 3 istek
+ * Brute force ve hesap olusturma kotuye kullanimini engeller.
  */
 @Component
 @Slf4j
 public class RateLimitFilter extends OncePerRequestFilter {
 
-    private static final int MAX_LOGIN_ATTEMPTS_PER_MINUTE = 5;
+    private static final int MAX_LOGIN_PER_MINUTE = 5;
+    private static final int MAX_REGISTER_PER_MINUTE = 3;
     private static final long WINDOW_MS = 60_000;
 
     private final ConcurrentHashMap<String, RateBucket> loginBuckets = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, RateBucket> registerBuckets = new ConcurrentHashMap<>();
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    @Value("${app.security.trust-forwarded-headers:false}")
+    private boolean trustForwardedHeaders;
 
     @Override
     protected void doFilterInternal(
@@ -43,12 +50,15 @@ public class RateLimitFilter extends OncePerRequestFilter {
         String path = request.getRequestURI();
         String method = request.getMethod();
 
-        // Sadece login icin rate limit uygula
         if ("POST".equals(method) && "/api/auth/login".equals(path)) {
-            String ip = extractIp(request);
-
-            if (!isAllowed(loginBuckets, ip, MAX_LOGIN_ATTEMPTS_PER_MINUTE)) {
-                log.warn("Rate limit asildi - IP: {}", ip);
+            if (!isAllowed(loginBuckets, extractIp(request), MAX_LOGIN_PER_MINUTE)) {
+                log.warn("Login rate limit asildi - IP: {}", extractIp(request));
+                writeRateLimitResponse(response, request);
+                return;
+            }
+        } else if ("POST".equals(method) && "/api/auth/register".equals(path)) {
+            if (!isAllowed(registerBuckets, extractIp(request), MAX_REGISTER_PER_MINUTE)) {
+                log.warn("Register rate limit asildi - IP: {}", extractIp(request));
                 writeRateLimitResponse(response, request);
                 return;
             }
@@ -70,10 +80,17 @@ public class RateLimitFilter extends OncePerRequestFilter {
         return currentCount <= maxRequests;
     }
 
+    /**
+     * X-Forwarded-For header'i sadece guvenilir bir reverse-proxy arkasinda
+     * calistigimizdan eminsek (app.security.trust-forwarded-headers=true) okuruz.
+     * Aksi halde saldirgan bu header'i sahte yazip rate limit'i bypass edebilir.
+     */
     private String extractIp(HttpServletRequest request) {
-        String forwarded = request.getHeader("X-Forwarded-For");
-        if (forwarded != null && !forwarded.isBlank()) {
-            return forwarded.split(",")[0].trim();
+        if (trustForwardedHeaders) {
+            String forwarded = request.getHeader("X-Forwarded-For");
+            if (forwarded != null && !forwarded.isBlank()) {
+                return forwarded.split(",")[0].trim();
+            }
         }
         return request.getRemoteAddr();
     }

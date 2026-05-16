@@ -1,10 +1,14 @@
 package com.finportfolio.security;
 
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.security.Keys;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.lang.NonNull;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -12,7 +16,9 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
+import javax.crypto.SecretKey;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 
 @Component
 @RequiredArgsConstructor
@@ -20,6 +26,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
     private final CustomUserDetailsService userDetailsService;
+
+    @Value("${app.jwt.secret}")
+    private String secret;
 
     @Override
     protected void doFilterInternal(
@@ -36,7 +45,19 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         String jwt = authHeader.substring(7);
         try {
-            String email = jwtService.extractEmail(jwt);
+            // Once token tipini kontrol et: SADECE access token'lar API erisimi icin gecerli
+            SecretKey key = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
+            Claims claims = Jwts.parser().verifyWith(key).build()
+                    .parseSignedClaims(jwt).getPayload();
+
+            String type = claims.get("type", String.class);
+            if (!"access".equals(type)) {
+                // Refresh token API erisiminde kullanilamaz
+                filterChain.doFilter(request, response);
+                return;
+            }
+
+            String email = claims.getSubject();
             if (email != null && SecurityContextHolder.getContext().getAuthentication() == null) {
                 UserDetails userDetails = userDetailsService.loadUserByUsername(email);
                 if (jwtService.isTokenValid(jwt, email)) {
@@ -46,6 +67,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 }
             }
         } catch (Exception ignored) {
+            // Gecersiz/expired token: authentication set edilmez, asagidaki filter chain devam eder
         }
 
         filterChain.doFilter(request, response);
