@@ -11,17 +11,15 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.security.SecureRandom;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
-import java.util.Base64;
 
 /**
  * Uygulama her basladiginda demo kullanici ve portfoy yukler.
  * application.properties'te app.demo.enabled=false yapilirsa devre disi kalir.
  *
- * GUVENLIK NOTU: Demo sifresi log'a YAZILMAZ; sadece konsola bir kez basilir.
- * Sabit "Demo1234" kaldirildi - her baslangicta rastgele uretiliyor.
+ * Lokal gelistirmede app.demo.password (varsayilan: Demo1234) kullanilir.
+ * Production'da app.demo.enabled=false yapilmalidir.
  */
 @Component
 @RequiredArgsConstructor
@@ -36,6 +34,9 @@ public class DemoDataLoader implements CommandLineRunner {
     @Value("${app.demo.enabled:false}")
     private boolean demoEnabled;
 
+    @Value("${app.demo.password:Demo1234}")
+    private String demoPassword;
+
     @Override
     @Transactional
     public void run(String... args) {
@@ -44,15 +45,16 @@ public class DemoDataLoader implements CommandLineRunner {
             return;
         }
 
-        if (userRepository.existsByEmail("demo@finportfolio.com")) {
-            log.info("Demo kullanici zaten var, veri yukleme atlandi");
+        var existingDemo = userRepository.findByEmail("demo@finportfolio.com");
+        if (existingDemo.isPresent()) {
+            User demoUser = existingDemo.get();
+            demoUser.setPasswordHash(passwordEncoder.encode(demoPassword));
+            userRepository.save(demoUser);
+            log.info("Demo kullanici mevcut, sifre guncellendi: demo@finportfolio.com");
             return;
         }
 
         log.info("Demo veri yukleniyor...");
-
-        // Sabit yerine rastgele sifre uret; sadece konsola yazdir (log dosyasina kaydedilmesin)
-        String demoPassword = generateRandomPassword();
 
         User demoUser = User.builder()
                 .email("demo@finportfolio.com")
@@ -64,12 +66,6 @@ public class DemoDataLoader implements CommandLineRunner {
 
         Long userId = demoUser.getId();
         log.info("Demo kullanici olusturuldu: ID={}, email=demo@finportfolio.com", userId);
-        // Sifre sadece System.out'a yazilir; production log seviyesinde gozukmemesi icin
-        System.out.println("============================================================");
-        System.out.println("DEMO KULLANICI SIFRESI (sadece bu konsolda goruntulenir):");
-        System.out.println("Email: demo@finportfolio.com");
-        System.out.println("Sifre: " + demoPassword);
-        System.out.println("============================================================");
 
         // Demo portfoy
         portfolioItemRepository.save(PortfolioItem.builder()
@@ -106,12 +102,5 @@ public class DemoDataLoader implements CommandLineRunner {
                 .thresholdValue(new BigDecimal("6500")).isActive(true).isTriggered(false).build());
 
         log.info("Demo veri yuklendi: 5 yatirim, 2 alarm");
-    }
-
-    private String generateRandomPassword() {
-        SecureRandom random = new SecureRandom();
-        byte[] bytes = new byte[12];
-        random.nextBytes(bytes);
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
     }
 }
