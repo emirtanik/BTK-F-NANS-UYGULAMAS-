@@ -33,7 +33,7 @@ public class ChatController {
     }
 
     /**
-     * Serbest sohbet
+     * Serbest sohbet (sohbet asistanı)
      */
     @PostMapping("/message")
     public ResponseEntity<ChatResponse> chat(
@@ -42,6 +42,27 @@ public class ChatController {
     ) {
         Long userId = extractUserId(httpRequest);
         return ResponseEntity.ok(chatService.chat(userId, request.message()));
+    }
+
+    /**
+     * Danışman karşılama özeti
+     */
+    @GetMapping("/advice/welcome")
+    public ResponseEntity<ChatResponse> adviceWelcome(HttpServletRequest request) {
+        Long userId = extractUserId(request);
+        return ResponseEntity.ok(chatService.adviceWelcome(userId));
+    }
+
+    /**
+     * Danışmana soru sor (akıl veren asistan)
+     */
+    @PostMapping("/advice")
+    public ResponseEntity<ChatResponse> advise(
+            @Valid @RequestBody ChatMessageRequest request,
+            HttpServletRequest httpRequest
+    ) {
+        Long userId = extractUserId(httpRequest);
+        return ResponseEntity.ok(chatService.advise(userId, request.message()));
     }
 
     private Long extractUserId(HttpServletRequest request) {

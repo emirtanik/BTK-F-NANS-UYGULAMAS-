@@ -9,14 +9,28 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (token) {
+    const initAuth = async () => {
+      if (!token) {
+        localStorage.removeItem('token');
+        setUser(null);
+        setLoading(false);
+        return;
+      }
+
       localStorage.setItem('token', token);
-      setUser({ token });
-    } else {
-      localStorage.removeItem('token');
-      setUser(null);
-    }
-    setLoading(false);
+      try {
+        await api.get('/portfolio');
+        setUser({ token });
+      } catch {
+        localStorage.removeItem('token');
+        setToken(null);
+        setUser(null);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    initAuth();
   }, [token]);
 
   const login = async (credentials) => {

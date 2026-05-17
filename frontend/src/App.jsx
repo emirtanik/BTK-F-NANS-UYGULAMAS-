@@ -4,6 +4,8 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import Analysis from './pages/Analysis';
+import ChatAssistant from './pages/ChatAssistant';
+import AdvisorAssistant from './pages/AdvisorAssistant';
 
 const ProtectedRoute = ({ children }) => {
   const { user } = useAuth();
@@ -33,6 +35,22 @@ const App = () => {
                 <Analysis />
               </ProtectedRoute>
             } 
+          />
+          <Route
+            path="/chat"
+            element={
+              <ProtectedRoute>
+                <ChatAssistant />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/advisor"
+            element={
+              <ProtectedRoute>
+                <AdvisorAssistant />
+              </ProtectedRoute>
+            }
           />
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
         </Routes>

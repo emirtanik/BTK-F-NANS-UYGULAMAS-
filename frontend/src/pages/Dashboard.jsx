@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import Navbar from '../components/Navbar';
 import api from '../api/axiosConfig';
+import { getApiErrorMessage } from '../api/apiError';
 import { DollarSign, TrendingUp, TrendingDown, Plus, Trash2 } from 'lucide-react';
 
 const formatTry = (value) =>
@@ -21,8 +22,8 @@ const Dashboard = () => {
       const { data } = await api.get('/portfolio');
       setPortfolio(data);
       setError('');
-    } catch {
-      setError('Portföy bilgileri alınamadı.');
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Portföy bilgileri alınamadı.'));
     } finally {
       setLoading(false);
     }
@@ -34,19 +35,36 @@ const Dashboard = () => {
 
   const handleAddItem = async (e) => {
     e.preventDefault();
+    const parsedAmount = Number(amount);
+    const parsedPrice = Number(buyPriceTry);
+
+    if (!assetSymbol.trim()) {
+      setError('Sembol zorunludur.');
+      return;
+    }
+    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+      setError('Miktar 0\'dan büyük olmalıdır.');
+      return;
+    }
+    if (!Number.isFinite(parsedPrice) || parsedPrice <= 0) {
+      setError('Alış fiyatı 0\'dan büyük olmalıdır.');
+      return;
+    }
+
     try {
+      setError('');
       await api.post('/portfolio/items', {
-        assetSymbol,
-        amount: Number(amount),
-        buyPriceTry: Number(buyPriceTry),
+        assetSymbol: assetSymbol.trim(),
+        amount: parsedAmount,
+        buyPriceTry: parsedPrice,
         assetType,
       });
       setAssetSymbol('');
       setAmount('');
       setBuyPriceTry('');
-      fetchPortfolio();
-    } catch {
-      setError('Varlık eklenirken bir hata oluştu.');
+      await fetchPortfolio();
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Varlık eklenirken bir hata oluştu.'));
     }
   };
 
@@ -54,8 +72,8 @@ const Dashboard = () => {
     try {
       await api.delete(`/portfolio/items/${itemId}`);
       fetchPortfolio();
-    } catch {
-      setError('Varlık silinirken bir hata oluştu.');
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Varlık silinirken bir hata oluştu.'));
     }
   };
 
@@ -98,8 +116,11 @@ const Dashboard = () => {
             <h3 style={{ marginBottom: '16px' }}>Yeni Varlık Ekle</h3>
             <form onSubmit={handleAddItem}>
               <div className="input-group">
-                <label>Sembol (Örn: BTC, GRAM_ALTIN)</label>
+                <label>Sembol (Örn: BTC, GRAM_ALTIN, USD)</label>
                 <input type="text" className="input-field" value={assetSymbol} onChange={e => setAssetSymbol(e.target.value.toUpperCase())} required />
+                <small style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>
+                  Desteklenen: BTC, ETH, BNB, SOL, XRP, ADA, GRAM_ALTIN, USD, EUR, GBP...
+                </small>
               </div>
               <div className="input-group">
                 <label>Miktar</label>

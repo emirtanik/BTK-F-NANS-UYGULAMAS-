@@ -1,6 +1,8 @@
 package com.finportfolio.config;
 
 import com.finportfolio.security.JwtAuthenticationFilter;
+import com.finportfolio.security.JsonAccessDeniedHandler;
+import com.finportfolio.security.JsonAuthEntryPoint;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -27,6 +29,8 @@ public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final com.finportfolio.security.RateLimitFilter rateLimitFilter;
+    private final JsonAuthEntryPoint jsonAuthEntryPoint;
+    private final JsonAccessDeniedHandler jsonAccessDeniedHandler;
 
     @Value("${app.cors.allowed-origins}")
     private String allowedOrigins;
@@ -47,6 +51,10 @@ public class SecurityConfig {
                                 "/ws/**"
                         ).permitAll()
                         .anyRequest().authenticated()
+                )
+                .exceptionHandling(ex -> ex
+                        .authenticationEntryPoint(jsonAuthEntryPoint)
+                        .accessDeniedHandler(jsonAccessDeniedHandler)
                 )
                 // Spring Security'nin default header'lari aktif:
                 //   X-Frame-Options: DENY (clickjacking koruma)

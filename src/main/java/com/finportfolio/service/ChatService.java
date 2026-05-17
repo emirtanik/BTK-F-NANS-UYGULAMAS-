@@ -11,6 +11,7 @@ import java.util.Map;
 import org.springframework.stereotype.Service;
 
 import com.finportfolio.dto.ChatResponse;
+import com.finportfolio.dto.PortfolioAnalysisResponse;
 import com.finportfolio.dto.WelcomeChatResponse;
 import com.finportfolio.entity.PortfolioItem;
 import com.finportfolio.repository.PortfolioItemRepository;
@@ -27,14 +28,23 @@ public class ChatService {
     private final MarketDataService marketDataService;
     private final PortfolioItemRepository portfolioItemRepository;
     private final SnapshotService snapshotService;
+    private final PortfolioAnalysisService portfolioAnalysisService;
 
-    private static final String SYSTEM_PROMPT = """
+    private static final String CHAT_SYSTEM_PROMPT = """
             Sen FinPortfolio adlı Türkçe konuşan, samimi ve bilgili bir finansal portföy asistanısın.
             Kullanıcılar altın, gümüş, döviz ve kripto yatırımları yapıyor.
             Yanıtların kısa (3-5 cümle), net ve Türkçe olmalı. Profesyonel ama soğuk olma, samimi bir arkadaş gibi konuş.
             Asla kesin yatırım tavsiyesi verme - "şunu al, şunu sat" deme. Bunun yerine genel bilgi ver, riskleri anlat, kullanıcının kendi kararını vermesi gerektiğini söyle.
             Türk Lirası fiyatlarıyla konuş. Sayıları 1.234,56 ₺ formatında yaz.
             Emoji kullanma, profesyonel kal.
+            """;
+
+    private static final String ADVISOR_SYSTEM_PROMPT = """
+            Sen FinPortfolio'un deneyimli portföy danışmanısın. Görevin kullanıcıya akıl vermek, riskleri ve seçenekleri açıklamaktır.
+            Yanıtların Türkçe, yapılandırılmış ve net olsun; gerektiğinde madde işaretleri kullan.
+            Kesin al/sat emri verme; bunun yerine senaryolar, riskler ve çeşitlendirme önerileri sun.
+            Portföy analiz verilerine dayan; kullanıcının mevcut dağılımını dikkate al.
+            Türk Lirası kullan. Emoji kullanma.
             """;
 
     /**
@@ -52,7 +62,7 @@ public class ChatService {
 
         if (items.isEmpty()) {
             String geminiReply = geminiService.generate(
-                    SYSTEM_PROMPT,
+                    CHAT_SYSTEM_PROMPT,
                     "Kullanıcı yeni giriş yaptı ama henüz portföyü boş. Onu sıcak bir şekilde karşıla, " +
                     "altın, gümüş, döviz veya kripto yatırımlarını eklemesi için yönlendir. 2-3 cümle."
             );
@@ -146,7 +156,7 @@ public class ChatService {
                     .append(timeAgo).append(") mutlaka mesajında belirt.");
         }
 
-        String geminiReply = geminiService.generate(SYSTEM_PROMPT, summaryForGemini.toString());
+        String geminiReply = geminiService.generate(CHAT_SYSTEM_PROMPT, summaryForGemini.toString());
 
         // Gemini yanit veremedi mi? Kendi akilli ozet uretelim.
         String botMessage = isFallbackResponse(geminiReply)
@@ -161,13 +171,96 @@ public class ChatService {
     public ChatResponse chat(Long userId, String userMessage) {
         String context = buildPortfolioContext(userId);
         String fullMessage = context + "\n\nKullanıcı sorusu: " + userMessage;
-        String geminiReply = geminiService.generate(SYSTEM_PROMPT, fullMessage);
+        String geminiReply = geminiService.generate(CHAT_SYSTEM_PROMPT, fullMessage);
 
         String reply = isFallbackResponse(geminiReply)
                 ? buildLocalChatReply(userId, userMessage)
                 : geminiReply;
 
         return ChatResponse.of(reply);
+    }
+
+    /**
+     * Danışman: girişte portföy analizine dayalı özet tavsiye.
+     */
+    public ChatResponse adviceWelcome(Long userId) {
+        PortfolioAnalysisResponse analysis = portfolioAnalysisService.analyze(userId);
+        String prompt = buildAnalysisPrompt(analysis) +
+                "\n\nKullanıcıya danışman olarak kısa bir karşılama ve 2-4 maddelik kişisel öneri özeti yaz.";
+
+        String geminiReply = geminiService.generate(ADVISOR_SYSTEM_PROMPT, prompt);
+        String reply = isFallbackResponse(geminiReply)
+                ? buildLocalAdviceWelcome(analysis)
+                : geminiReply;
+
+        return ChatResponse.of(reply);
+    }
+
+    /**
+     * Danışman: serbest soruya portföy + analiz bağlamında akıl verir.
+     */
+    public ChatResponse advise(Long userId, String userMessage) {
+        PortfolioAnalysisResponse analysis = portfolioAnalysisService.analyze(userId);
+        String context = buildPortfolioContext(userId) + "\n\n" + buildAnalysisPrompt(analysis);
+        String fullMessage = context + "\n\nKullanıcı sorusu: " + userMessage;
+
+        String geminiReply = geminiService.generate(ADVISOR_SYSTEM_PROMPT, fullMessage);
+        String reply = isFallbackResponse(geminiReply)
+                ? buildLocalAdviceReply(analysis, userMessage)
+                : geminiReply;
+
+        return ChatResponse.of(reply);
+    }
+
+    private String buildAnalysisPrompt(PortfolioAnalysisResponse analysis) {
+        StringBuilder sb = new StringBuilder("Portföy analizi:\n");
+        sb.append("- Risk skoru: ").append(analysis.riskScore()).append(" (").append(analysis.riskLevel()).append(")\n");
+        sb.append("- Çeşitlendirme skoru: ").append(analysis.diversificationScore()).append("/100\n");
+        sb.append("- Toplam değer: ").append(analysis.totalValueTry()).append(" ₺\n");
+        sb.append("- Varlık sayısı: ").append(analysis.totalAssets()).append("\n");
+
+        if (!analysis.recommendations().isEmpty()) {
+            sb.append("Öneriler:\n");
+            analysis.recommendations().forEach(r -> sb.append("  • ").append(r).append("\n"));
+        }
+        if (!analysis.warnings().isEmpty()) {
+            sb.append("Uyarılar:\n");
+            analysis.warnings().forEach(w -> sb.append("  • ").append(w).append("\n"));
+        }
+        return sb.toString();
+    }
+
+    private String buildLocalAdviceWelcome(PortfolioAnalysisResponse analysis) {
+        StringBuilder sb = new StringBuilder("Merhaba, ben portföy danışmanın. ");
+        sb.append(String.format("Risk skorun %d (%s), çeşitlendirme skorun %s/100. ",
+                analysis.riskScore(), analysis.riskLevel(), analysis.diversificationScore()));
+
+        if (!analysis.warnings().isEmpty()) {
+            sb.append("\n\nDikkat etmen gerekenler:\n");
+            analysis.warnings().forEach(w -> sb.append("• ").append(w).append("\n"));
+        }
+        if (!analysis.recommendations().isEmpty()) {
+            sb.append("\nÖnerilerim:\n");
+            analysis.recommendations().forEach(r -> sb.append("• ").append(r).append("\n"));
+        }
+        return sb.toString().trim();
+    }
+
+    private String buildLocalAdviceReply(PortfolioAnalysisResponse analysis, String userMessage) {
+        String lower = userMessage.toLowerCase();
+
+        if (lower.contains("risk")) {
+            return String.format(
+                    "Risk skorun %d ve seviye %s. Kripto ağırlığın yüksekse volatilite artar; altın ve döviz ekleyerek dengeleyebilirsin.",
+                    analysis.riskScore(), analysis.riskLevel());
+        }
+
+        if (!analysis.recommendations().isEmpty()) {
+            return "Portföyüne göre öncelikli önerilerim:\n• " +
+                    String.join("\n• ", analysis.recommendations());
+        }
+
+        return "Sorunu portföy verilerinle birlikte değerlendirdim. Daha net öneri için risk, çeşitlendirme veya belirli bir varlık hakkında soru sorabilirsin.";
     }
 
     private String buildPortfolioContext(Long userId) {

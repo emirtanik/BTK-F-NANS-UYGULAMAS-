@@ -15,4 +15,23 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401 || error.response?.status === 403) {
+      const isAuthError =
+        error.response?.status === 401 ||
+        error.response?.data?.message?.toLowerCase().includes('oturum');
+      if (isAuthError) {
+        localStorage.removeItem('token');
+        const onLoginPage = window.location.pathname === '/login';
+        if (!onLoginPage) {
+          window.location.href = '/login?session=expired';
+        }
+      }
+    }
+    return Promise.reject(error);
+  }
+);
+
 export default api;
