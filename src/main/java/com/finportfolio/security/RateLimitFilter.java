@@ -92,7 +92,12 @@ public class RateLimitFilter extends OncePerRequestFilter {
                 return forwarded.split(",")[0].trim();
             }
         }
-        return request.getRemoteAddr();
+                String ip = request.getRemoteAddr();
+        // IPv6 loopback'i IPv4'e normalize et (Windows localhost sorunu)
+        if ("0:0:0:0:0:0:0:1".equals(ip) || "::1".equals(ip)) {
+            return "127.0.0.1";
+        }
+        return ip;
     }
 
     private void writeRateLimitResponse(HttpServletResponse response, HttpServletRequest request) throws IOException {
