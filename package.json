@@ -1,0 +1,16 @@
+{
+  "name": "finportfolio",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "install:all": "npm install && npm install --prefix frontend",
+    "dev": "concurrently -k -n backend,frontend -c blue,magenta \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:backend": "node scripts/start-backend.js",
+    "dev:frontend": "npm run dev --prefix frontend",
+    "build": "npm run build --prefix frontend",
+    "lint": "npm run lint --prefix frontend"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}
