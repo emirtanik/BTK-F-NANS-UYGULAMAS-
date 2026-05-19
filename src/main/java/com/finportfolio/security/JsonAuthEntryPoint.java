@@ -13,9 +13,10 @@ import org.springframework.stereotype.Component;
 import java.io.IOException;
 
 @Component
+@lombok.RequiredArgsConstructor
 public class JsonAuthEntryPoint implements AuthenticationEntryPoint {
 
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper;
 
     @Override
     public void commence(HttpServletRequest request, HttpServletResponse response,

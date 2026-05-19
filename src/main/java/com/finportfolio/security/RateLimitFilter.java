@@ -27,16 +27,17 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 @Component
 @Slf4j
+@lombok.RequiredArgsConstructor
 public class RateLimitFilter extends OncePerRequestFilter {
 
     private static final int MAX_LOGIN_PER_MINUTE = 5;
     private static final int MAX_REGISTER_PER_MINUTE = 3;
     private static final long WINDOW_MS = 60_000;
 
-    private final ConcurrentHashMap<String, RateBucket> loginBuckets = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, RateBucket> registerBuckets = new ConcurrentHashMap<>();
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper;
 
+private final ConcurrentHashMap<String, RateBucket> loginBuckets = new ConcurrentHashMap<>();
+private final ConcurrentHashMap<String, RateBucket> registerBuckets = new ConcurrentHashMap<>();
     @Value("${app.security.trust-forwarded-headers:false}")
     private boolean trustForwardedHeaders;
 
